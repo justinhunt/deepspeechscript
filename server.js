@@ -384,7 +384,7 @@ app.post('/transcribe', async(req, res) => {
 			
 			//IF LANG is NOT ENGLISH -> Google Cloud Speech
 			//if we have a lang and its not English, we are google cloud speech'ing this one
-			if(lang!=null && lang!=undefined && lang.substr(0,2)!='en'){
+			if(lang!=null && lang!=undefined && lang != "" && lang.substr(0,2)!='en'){
 			    convertAndGspeechTranscribe('./uploads/' + tmpname,lang).then(function(transcription){
 					//send response
 					res.send({
