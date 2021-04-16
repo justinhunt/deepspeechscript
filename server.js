@@ -3,6 +3,7 @@
  **************************************************/
 const express = require('express');
 const queue = require('express-queue');
+const { ForkQueue } = require('node-fork-queue');
 const fileUpload = require('express-fileupload');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -49,25 +50,35 @@ const queueMw = queue({
         });
     }
 });
+
+/*************************************************
+Fork Queue
+ **************************************************/
+const fqueue = new ForkQueue({
+    processFilePath: `${__dirname}/processtranscribe.js`,
+    maxPoolSize: 2,
+    minPoolSize: 2,
+    idleTimeoutMillis: 30000
+});
 /*************************************************
     Initial values for models,
     change path or name here
  **************************************************/
 
-let STD_MODEL = "./deepspeech-0.7.3-models.pbmm"
-let STD_SCORER = "./deepspeech-0.7.3-models.scorer"
-let STD_SAMPLE_RATE = 16000; // std for deepspeech
+const STD_MODEL = "./deepspeech-0.7.3-models.pbmm";
+const STD_SCORER = "./deepspeech-0.7.3-models.scorer";
+const STD_SAMPLE_RATE = 16000; // std for deepspeech
 
 /*************************************************
  Scorers folder
  **************************************************/
-let SCORERS_FOLDER = "/mnt/efs/scorers/";
+const SCORERS_FOLDER = "/mnt/efs/scorers/";
 
 /*************************************************
     Returns a model for given model and scorer path
  **************************************************/
 function createModel(modelPath, scorerPath) {
-	let model = new DeepSpeech.Model(modelPath);
+	var model = new DeepSpeech.Model(modelPath);
 	model.enableExternalScorer(scorerPath);
 	return model;
 }
@@ -77,7 +88,7 @@ function createModel(modelPath, scorerPath) {
  **************************************************/
 function metadataToString(all_metadata) {
 	var transcript = all_metadata.transcripts[0];
-	var retval = ""
+	var retval = "";
 		for (var i = 0; i < transcript.tokens.length; ++i) {
 			retval += transcript.tokens[i].text;
 		}
@@ -155,7 +166,7 @@ function metadataToAWSFormat(all_metadata,transcript) {
 }//end of function
 
 function bufferToStream(buffer) {
-	let stream = new Duplex();
+	var stream = new Duplex();
 	stream.push(buffer);
 	stream.push(null);
 	return stream;
@@ -247,93 +258,14 @@ function convertAndGspeechTranscribe(audiofile, lang){
     change sttWithMetadata() to stt() if needed
  **************************************************/
 
-function convertAndTranscribe(audiofile, scorerfile){
-    var convfile = audiofile + '_conv';
-    console.log('audiofile',audiofile);
-
-    var proc = ffmpeg(audiofile)
-        .format('wav')
-        .audioFilters(['afftdn'])
-        .audioCodec('pcm_s16le')
-        .audioBitrate(16)
-        .audioChannels(1)
-        .withAudioFrequency(STD_SAMPLE_RATE);
-
-        //return the promise we use as response
-        var thepromise = new Promise(function (resolve, reject) {
-            proc.on('end', () => {
-
-                console.log('file has been converted succesfully');
-
-                var model = createModel(STD_MODEL, scorerfile);
-                var beamwidth=500;
-                if(scorerfile==STD_SCORER){
-                    beamwidth=2000;
-                }
-                model.setBeamWidth(beamwidth);
-                var audioBuffer = fs.readFileSync(convfile);
-                var result = model.sttWithMetadata(audioBuffer);
-
-                console.log("Transcript: "+metadataToString(result));
-
-                deleteFile(audiofile);
-                deleteFile(convfile);
-
-                resolve(result);
-            });
-        });
-
-        //if we have an error
-        proc.on('error', function(err) {
-            console.log('an error happened: ' + err.message);
-        });
-
-        // save to file
-        proc.save(convfile);
-
-        //return our promise
-       return thepromise;
+function convertAndTranscribe(audiofile, scorerfile, callback){
+    fqueue.push({
+        action: "convertAndTranscribe",
+        audiofile: audiofile,
+        scorerfile: scorerfile
+    }, callback);
 }
 
-/*************************************************
- The OLD method. We used sox to convert audio input to
- mono 16bit PCM 16Khz
- then run DeepSpeech in a stream
- change sttWithMetadata() to stt() if needed
- **************************************************/
-
-function convertAndTranscribeOLD(model, buffer, inputType) {
-	let audioStream = new MemoryStream();
-        let soxOpts = {
-                        global: {
-                                'no-dither': true,
-                        },
-                        output: {
-                                bits: 16,
-                                rate: STD_SAMPLE_RATE,
-                                channels: 1,
-                                encoding: 'signed-integer',
-                                endian: 'little',
-                                compression: 0.0,
-                                type: 'raw'
-                        }
-                };
-        if(inputType != 'auto'){
-           soxOpts.input = {type: inputType};
-        }
-	bufferToStream(buffer).
-	pipe(Sox(soxOpts)).
-	pipe(audioStream);
-
-	return new Promise(function (resolve, reject) {
-		audioStream.on('finish', () => {
-			let audioBuffer = audioStream.toBuffer();
-			// this is where we run the DeepSpeech model
-			let result = model.sttWithMetadata(audioBuffer);
-			resolve(result);
-		});
-	});
-}
 
 /*************************************************
     Config of webserver 
@@ -372,9 +304,9 @@ app.post('/transcribe', async(req, res) => {
 			console.log("*** start transcribe ***");
 			//Use the name of the input field (i.e. "audioFile") to retrieve the uploaded file
             // you may have to change it 
-			let audio_input = req.files.audioFile;
-			let scorer = req.body.scorer;
-			let lang = req.body.lang;
+			var audio_input = req.files.audioFile;
+			var scorer = req.body.scorer;
+			var lang = req.body.lang;
 			console.log('lang',lang);
 			
 			//Use the mv() method to save the file in upload directory (i.e. "uploads")
@@ -419,25 +351,22 @@ app.post('/transcribe', async(req, res) => {
 				 console.log('-scorer: ', scorer);
 				 console.log('-usescorer: ', usescorer);
 
-				
-				convertAndTranscribe('./uploads/' + tmpname,usescorer).then(function (metadata) {
-					var transcription = metadataToString(metadata);
-					console.log("Transcription: " + transcription);
+				var ct_callback = function (metadata) {
+                    var transcription = metadataToString(metadata);
+                    console.log("Transcription: " + transcription);
 
-					//send response
-					res.send({
-						status: true,
-						message: 'File uploaded and transcribed.',
-						data: {
-							transcript: transcription,
-							result: 'success'
-						}
-					});
+                    //send response
+                    res.send({
+                        status: true,
+                        message: 'File uploaded and transcribed.',
+                        data: {
+                            transcript: transcription,
+                            result: 'success'
+                        }
+                    });
+                };
+				convertAndTranscribe('./uploads/' + tmpname,usescorer,ct_callback);
 
-				}).catch(function (error) {
-					console.log(error.message);
-					res.status(500).send();
-				});
 			}//end of if lang!=en
 		}//end of !req.files
 	} catch (err) {
