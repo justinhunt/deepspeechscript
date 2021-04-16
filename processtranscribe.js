@@ -71,13 +71,13 @@ function createModel(modelPath, scorerPath) {
   return model;
 }
 
-function metadataToString(all_metadata, idx) {
-  var transcript = all_metadata.transcripts[idx];
-  var retval = "";
-  for (var i = 0; i < transcript.tokens.length; ++i) {
-    retval += transcript.tokens[i].text;
-  }
-  return retval;
+function metadataToString(all_metadata) {
+    var transcript = all_metadata.transcripts[0];
+    var retval = "";
+    for (var i = 0; i < transcript.tokens.length; ++i) {
+        retval += transcript.tokens[i].text;
+    }
+    return retval;
 }
 
 function deleteFile(path) {
