@@ -6,14 +6,13 @@ const STD_SAMPLE_RATE = 16000; // std for deepspeech
 const ffmpeg = require('fluent-ffmpeg');
 
 process.on('message', async function(message){
+ console.log("starting " + message.value.action + " from process..");
+  switch(message.value.action){
 
-  if (message.value.action === 'convertAndTranscribe') {
+      case 'convertAndTranscribe':
+          var metadata = await convertAndTranscribe(message.value.audiofile,message.value.scorerfile);
+          process.send(metadata);
 
-    console.log("starting convert and transcribe from process..");
-
-   var metadata = await convertAndTranscribe(message.value.audiofile,message.value.scorerfile);
-
-    process.send(metadata);
   }
 });
 

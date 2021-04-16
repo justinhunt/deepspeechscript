@@ -2,54 +2,26 @@
     Standard imports
  **************************************************/
 const express = require('express');
-const queue = require('express-queue');
-const { ForkQueue } = require('node-fork-queue');
+const {ForkQueue} = require('node-fork-queue');
 const fileUpload = require('express-fileupload');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
 const _ = require('lodash');
 const app = express();
-const DeepSpeech = require('deepspeech');
-const Sox = require('sox-stream');
-const MemoryStream = require('memory-stream');
+const DeepSpeech = require('deepspeech');;
 const Duplex = require('stream').Duplex;
-const Wav = require('node-wav');
 const request = require("request");
 const fs = require('fs');
-const fsPromises = fs.promises;
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const ffmpeg = require('fluent-ffmpeg');
 const url = require('url');
-const ACTIVE_LIMIT = 2;
-const QUEUED_LIMIT = 100;
 
 process.env.GOOGLE_APPLICATION_CREDENTIALS='/home/deepserver/gcloud_client_secret.json';
 const gspeech = require('@google-cloud/speech');
 const gspeechclient = new gspeech.SpeechClient();
-
-/*************************************************
- Request Queue
- **************************************************/
-const queueMw = queue({
-    activeLimit: ACTIVE_LIMIT,
-    queuedLimit: QUEUED_LIMIT,
-    rejectHandler: (req, res) => {
-        var id;
-        if (req.body.hasOwnProperty("id")) {
-            id = req.body.id;
-        } else {
-            id = null;
-        }
-        return res.send({
-            id: id,
-            result: "error",
-            message: 'Server busy. Please try again.'
-        });
-    }
-});
 
 /*************************************************
 Fork Queue
@@ -165,13 +137,6 @@ function metadataToAWSFormat(all_metadata,transcript) {
 
 }//end of function
 
-function bufferToStream(buffer) {
-	var stream = new Duplex();
-	stream.push(buffer);
-	stream.push(null);
-	return stream;
-}
-
 /*************************************************
     Use FFMPEG to convert any audio input to
     mono 16bit PCM 16Khz
@@ -194,7 +159,7 @@ function convertAndGspeechTranscribe(audiofile, lang){
 
         //return the promise we use as response
         var thepromise = new Promise(function (resolve, reject) {
-            proc.on('end', () => {
+            proc.on('end', function(){
 
                 console.log('file has been converted succesfully');
 
@@ -212,11 +177,11 @@ function convertAndGspeechTranscribe(audiofile, lang){
 				};
 				const request = {
 					audio: audio,
-					config: config,
+					config: config
 				};
 
 				gspeechclient.recognize(request).then(
-					data => {
+					function(data){
 						const response = data[0];
 						const transcription = response.results.map(
 							result => result.alternatives[0].transcript
@@ -266,6 +231,18 @@ function convertAndTranscribe(audiofile, scorerfile, callback){
     }, callback);
 }
 
+function convertAndTranscribePromise(audiofile, scorerfile){
+    return new Promise(resolve, reject)
+    {
+        fqueue.push({
+            action: "convertAndTranscribe",
+            audiofile: audiofile,
+            scorerfile: scorerfile
+        }, function(metadata){resolve(metadata);});
+    }
+}
+
+
 
 /*************************************************
     Config of webserver 
@@ -280,9 +257,8 @@ app.use(bodyParser.urlencoded({
 		extended: true
 	}));
 app.use(morgan('dev'));
-app.use(queueMw);
 app.set("view engine", "ejs");
-app.get('/', (req, res) => {
+app.get('/', function(req, res){
 	res.render('index');
 });
 
@@ -293,7 +269,7 @@ app.get('/', (req, res) => {
  takes wav files rom request from browser and returns trancscript
  Called from Browser
  **************************************************/
-app.post('/transcribe', async(req, res) => {
+app.post('/transcribe', async function(req, res){
 	try {
 		if (!req.files) {
 			res.send({
@@ -382,7 +358,7 @@ app.post('/transcribe', async(req, res) => {
     Could be made to return resp. to lambda before finish job, if we wanted that.
  Called from SQS->lambda->here
  **************************************************/
-app.post('/s3transcribeReturn', (req, res) => {
+app.post('/s3transcribeReturn', function(req, res){
 	try {
 		if (!req.body.audioFileUrl) {
 	   
@@ -394,11 +370,11 @@ app.post('/s3transcribeReturn', (req, res) => {
 		} else {
 				console.log("*** start transcribe ***");
 
-				let transcriptUrl = decodeURIComponent(req.body.transcriptUrl);
-				let metadataUrl = decodeURIComponent(req.body.metadataUrl);
-				let audioFileUrl = req.body.audioFileUrl;
-				let audioFileType = req.body.audioFileType;
-				let vocab = req.body.vocab;
+				var transcriptUrl = decodeURIComponent(req.body.transcriptUrl);
+				var metadataUrl = decodeURIComponent(req.body.metadataUrl);
+				var audioFileUrl = req.body.audioFileUrl;
+				var audioFileType = req.body.audioFileType;
+				var vocab = req.body.vocab;
 				//console.log("transcriptUrl", transcriptUrl);
 			    //console.log("metadataUrl", metadataUrl);
 				console.log("audioFileUrl", audioFileUrl);
@@ -408,7 +384,7 @@ app.post('/s3transcribeReturn', (req, res) => {
 
 				var requestOpts = {method: 'GET', url: audioFileUrl, encoding: null};
 				request.get(requestOpts, function (error, response, body) {
-                    if (!error && response.statusCode == 200) {
+                    if (!error && response.statusCode === 200) {
                         var audioData = body;
                         const audioLength = (audioData.length / 2) * (1 / STD_SAMPLE_RATE);
                         console.log('- audio length', audioLength);
@@ -428,53 +404,49 @@ app.post('/s3transcribeReturn', (req, res) => {
                         var tmpname = Math.random().toString(20).substr(2, 6) + '.wav';
                         fs.writeFileSync("uploads/" + tmpname, audioData);
 
-                        convertAndTranscribe("uploads/" + tmpname, usescorer)
-                            .then(function (metadata) {
-                                var transcription = metadataToString(metadata);
-                                var stringmetadata = metadataToAWSFormat(metadata, transcription);
+
+                        var ct_callback = function (metadata) {
+                            var transcription = metadataToString(metadata);
+                            var stringmetadata = metadataToAWSFormat(metadata, transcription);
 
 
-                                var putTranscriptOpts = {
-                                    url: transcriptUrl,
-                                    method: 'PUT',
-                                    body: transcription,
-                                    json: false,
-                                    headers: {'Content-Type': 'application/octet-stream'}
-                                };
-                                request.put(putTranscriptOpts, function (err, res, body) {
-                                    if (err) {
-                                        console.log('error posting transcript', err);
-                                    }
-                                    ;
-                                });
-
-                                var putMetadataOpts = {
-                                    url: metadataUrl,
-                                    method: 'PUT',
-                                    body: stringmetadata,
-                                    json: false,
-                                    headers: {'Content-Type': 'application/octet-stream'}
-                                };
-                                request.put(putMetadataOpts, function (err, res, body) {
-                                    if (err) {
-                                        console.log('error posting metadata transcript', err);
-                                    }
-                                });
-
-                                //send response, maybe with some id?
-                                res.send({
-                                    status: true,
-                                    message: 's3transcribeReturn : File uploaded and transcribed .',
-                                    data: {
-                                        results: "nothing to declare"
-                                    }
-                                });
-
-                                //END OF THEN
-                            }).catch(function (error) {
-                                console.log(error.message);
-                                res.status(500).send();
+                            var putTranscriptOpts = {
+                                url: transcriptUrl,
+                                method: 'PUT',
+                                body: transcription,
+                                json: false,
+                                headers: {'Content-Type': 'application/octet-stream'}
+                            };
+                            request.put(putTranscriptOpts, function (err, res, body) {
+                                if (err) {
+                                    console.log('error posting transcript', err);
+                                }
                             });
+
+                            var putMetadataOpts = {
+                                url: metadataUrl,
+                                method: 'PUT',
+                                body: stringmetadata,
+                                json: false,
+                                headers: {'Content-Type': 'application/octet-stream'}
+                            };
+                            request.put(putMetadataOpts, function (err, res, body) {
+                                if (err) {
+                                    console.log('error posting metadata transcript', err);
+                                }
+                            });
+
+                            //send response, maybe with some id?
+                            res.send({
+                                status: true,
+                                message: 's3transcribeReturn : File uploaded and transcribed .',
+                                data: {
+                                    results: "nothing to declare"
+                                }
+                            });
+                        };
+
+                        convertAndTranscribe('./uploads/' + tmpname,usescorer,ct_callback);
 
                     }else{
                         console.log("error", error);
@@ -497,7 +469,7 @@ app.post('/s3transcribeReturn', (req, res) => {
  synchroneous transcription, ie it blocks thread till returns
  Called from SQS->lambda->here
  **************************************************/
-app.post('/s3transcribe', async(req, res) => {
+app.post('/s3transcribe', async function(req, res){
         try {
                 if (!req.body.audioFileUrl) {
                
@@ -511,11 +483,11 @@ app.post('/s3transcribe', async(req, res) => {
 
                         //Use the name of the input field (i.e. "audioFile") to retrieve the uploaded file
                         // you may have to change it
-                        let transcriptUrl = decodeURIComponent(req.body.transcriptUrl);
-                        let metadataUrl = decodeURIComponent(req.body.metadataUrl);
-                        let audioFileUrl = req.body.audioFileUrl;
-                        let audioFileType = req.body.audioFileType;
-                        let vocab = req.body.vocab;
+                        var transcriptUrl = decodeURIComponent(req.body.transcriptUrl);
+                        var metadataUrl = decodeURIComponent(req.body.metadataUrl);
+                        var audioFileUrl = req.body.audioFileUrl;
+                        var audioFileType = req.body.audioFileType;
+                        var vocab = req.body.vocab;
                         console.log("transcriptUrl", transcriptUrl);
                         console.log("metadataUrl", metadataUrl);
                         console.log("audioFileUrl", audioFileUrl);
@@ -527,7 +499,7 @@ app.post('/s3transcribe', async(req, res) => {
 
                         var requestOpts = {method: 'GET', url: audioFileUrl, encoding: null};
                         request.get(requestOpts, async function (error, response, body) {
-                           if (!error && response.statusCode == 200) {
+                           if (!error && response.statusCode === 200) {
                               var audioData = body;
                               const audioLength = (audioData.length / 2) * (1 / STD_SAMPLE_RATE);
                               console.log('- audio length', audioLength);
@@ -547,53 +519,52 @@ app.post('/s3transcribe', async(req, res) => {
                                var tmpname = Math.random().toString(20).substr(2, 6) + '.wav';
                                fs.writeFileSync("uploads/" + tmpname, audioData);
 
-                            //do the transcode and transcribe
-                            var metadata = await  convertAndTranscribe("uploads/" + tmpname, usescorer);
-                        
-                             // to see metadata uncomment next line
-                             // console.log(JSON.stringify(metadata, " ", 2));
-            
-                             var transcription = metadataToString(metadata);
-                             var stringmetadata = metadataToAWSFormat(metadata,transcription);
-                             //old string metadata
-                             //var stringmetadata = JSON.stringify(metadata);
+                                var metadata = await convertAndTranscribePromise("uploads/" + tmpname, usescorer);
 
-                             console.log("Transcription: " + transcription);
-                             //console.log("Transcription META: " + stringmetadata);
-                             
-                             var putTranscriptOpts={ url: transcriptUrl, 
-                                  method: 'PUT', 
-                                  body: transcription,
-                                  json: false,
-                                  headers: {'Content-Type': 'application/octet-stream'}
-                             };
-                             request.put(putTranscriptOpts,function(err,res,body){
-                               if(err){
-                                 console.log('error posting transcript',err);
-                               }
-                             });
+                               // to see metadata uncomment next line
+                               // console.log(JSON.stringify(metadata, " ", 2));
 
-                             var putMetadataOpts={ url: metadataUrl, 
-                                  method: 'PUT', 
-                                  body: stringmetadata,
-                                  json: false,
-                                  headers: {'Content-Type': 'application/octet-stream'}
-                             };
-                             request.put(putMetadataOpts,function(err,res,body){
-                               if(err){
-                                 console.log('error posting metadata transcript',err);
-                               }
-                             });
+                               var transcription = metadataToString(metadata);
+                               var stringmetadata = metadataToAWSFormat(metadata,transcription);
+                               //old string metadata
+                               //var stringmetadata = JSON.stringify(metadata);
+
+                               console.log("Transcription: " + transcription);
+                               //console.log("Transcription META: " + stringmetadata);
+
+                               var putTranscriptOpts={ url: transcriptUrl,
+                                   method: 'PUT',
+                                   body: transcription,
+                                   json: false,
+                                   headers: {'Content-Type': 'application/octet-stream'}
+                               };
+                               request.put(putTranscriptOpts,function(err,res,body){
+                                   if(err){
+                                       console.log('error posting transcript',err);
+                                   }
+                               });
+
+                               var putMetadataOpts={ url: metadataUrl,
+                                   method: 'PUT',
+                                   body: stringmetadata,
+                                   json: false,
+                                   headers: {'Content-Type': 'application/octet-stream'}
+                               };
+                               request.put(putMetadataOpts,function(err,res,body){
+                                   if(err){
+                                       console.log('error posting metadata transcript',err);
+                                   }
+                               });
 
 
-                              //send response
-                              res.send({
-                                      status: true,
-                                      message: 'File uploaded and transcribed.',
-                                      data: {
-                                        results: transcription
-                                      }
-                              });
+                               //send response
+                               res.send({
+                                   status: true,
+                                   message: 'File uploaded and transcribed.',
+                                   data: {
+                                       results: transcription
+                                   }
+                               });
 
                            }else{
                               console.log("error", error);
@@ -617,7 +588,7 @@ app.post('/s3transcribe', async(req, res) => {
  **************************************************/
  
 const execFile = require('child_process').execFile;
-const path2buildDir = "/home/scorerbuilder/"
+const path2buildDir = "/home/scorerbuilder/";
 
 function moveFile(fromPath, toPath) {
     fs.copyFile(fromPath, toPath, function (err) {
@@ -648,7 +619,7 @@ function write2File (path, content) {
     });
 }
 
-app.get('/scorerbuilder', (req, res) => {
+app.get('/scorerbuilder', function(req, res){
     var sentence = req.query.sentence;
     console.log("** Build Scorer for " + sentence);
 
@@ -673,13 +644,13 @@ app.get('/scorerbuilder', (req, res) => {
     //If model not exists create it
     }else{
 
-        let tmpname = Math.random().toString(20).substr(2, 6);
-        let tmp_textpath = path2buildDir + 'work/' + tmpname + '.txt';
-        let tmp_scorerpath = path2buildDir + 'work/' + tmpname + '.scorer';
+        var tmpname = Math.random().toString(20).substr(2, 6);
+        var tmp_textpath = path2buildDir + 'work/' + tmpname + '.txt';
+        var tmp_scorerpath = path2buildDir + 'work/' + tmpname + '.scorer';
         write2File(tmp_textpath, sentence + "\n");
 
         // run script that builds model, callback after that is done and we moved scorer
-        const child = execFile(path2buildDir + "ttd-lm.sh", [tmpname], (error, stdout, stderr) => {
+        const child = execFile(path2buildDir + "ttd-lm.sh", [tmpname], function(error, stdout, stderr){
             if (error) {
                 console.error('stderr', stderr);
                 throw error;
@@ -725,7 +696,7 @@ app.get('/scorerbuilder', (req, res) => {
  **************************************************/
 const SpellChecker = require('node-aspell');
 
-app.post('/spellcheck',(req,res)=>{
+app.post('/spellcheck',function(req,res){
     try {
         if (!req.body.passage) {
 
@@ -737,13 +708,13 @@ app.post('/spellcheck',(req,res)=>{
         } else {
             console.log("*** start spellcheck ***");
 
-            let lang= req.body.lang; //eg "en_US"
-            let passage = req.body.passage;
-            let vocab = req.body.vocab;
+            var lang= req.body.lang; //eg "en_US"
+            var passage = req.body.passage;
+            var vocab = req.body.vocab;
 
             const checker = new SpellChecker.Spellchecker(lang);
-            let words = passage.split(' ');
-            let returndata={};
+            var words = passage.split(' ');
+            var returndata={};
             returndata.results =[];
             for(var i=0;i<words.length;i++){
                 returndata.results[i] = !checker.isMisspelled(words[i]);
@@ -771,7 +742,7 @@ app.post('/spellcheck',(req,res)=>{
  **************************************************/
 
 function downloadmedia(downloadurl, savepath, callback){
-    request.head(downloadurl, (err, res, body) => {
+    request.head(downloadurl, function(err, res, body) {
         if (err) {
             console.error('stderr', stderr);
             throw err;
@@ -782,7 +753,7 @@ function downloadmedia(downloadurl, savepath, callback){
         }
     });
 }
-app.post('/convertMediaReturn', (req, res) => {
+app.post('/convertMediaReturn', function(req, res){
     try {
         if (!req.body.sourceUrl) {
 
@@ -794,11 +765,11 @@ app.post('/convertMediaReturn', (req, res) => {
         } else {
             console.log("*** start convert ***");
 
-            let destinationUrl = decodeURIComponent(req.body.destinationUrl);
-            let sourceUrl = decodeURIComponent(req.body.sourceUrl);
-            let mediaType = req.body.mediaType;
-            let format ="mp3";
-            let tmpfilename = Math.random().toString(20).substr(2, 6);
+            var destinationUrl = decodeURIComponent(req.body.destinationUrl);
+            var sourceUrl = decodeURIComponent(req.body.sourceUrl);
+            var mediaType = req.body.mediaType;
+            var format ="mp3";
+            var tmpfilename = Math.random().toString(20).substr(2, 6);
             if(mediaType=='audio') {
                 tmpfilename += '.mp3';
                 format ="mp3";
@@ -806,8 +777,8 @@ app.post('/convertMediaReturn', (req, res) => {
                 tmpfilename += '.mp4';
                 format ="mp4";
             }
-            let convfilename ='conv_' + tmpfilename;
-            let ffmpegfolder ='/home/deepserver/ffmpegwork/';
+            var convfilename ='conv_' + tmpfilename;
+            var ffmpegfolder ='/home/deepserver/ffmpegwork/';
             console.log("destinationUrl ", destinationUrl );
             console.log("sourceUrl ", sourceUrl );
             console.log("mediaType", mediaType);
@@ -897,7 +868,7 @@ app.post('/convertMediaReturn', (req, res) => {
  concurrent use is safe
  Called from TTD server/browser
  **************************************************/
-app.post('/stt', (req, res) => {
+app.post('/stt', function(req, res){
 
     console.log("/stt endpoint triggered");
 
@@ -974,7 +945,7 @@ app.post('/stt', (req, res) => {
 TT uses this
  **************************************************/
 
-app.post('/lt',(req,res)=>{
+app.post('/lt',function(req,res){
     try {
         var proxy = require('request');
         proxy.post({
@@ -1002,7 +973,7 @@ app.post('/lt',(req,res)=>{
  concurrent use is safe
  Called from TTD server/browser
  **************************************************/
-app.post('/lm', (req, res) => {
+app.post('/lm', function(req, res){
     var data = req.body.data;
     //var dataobject = JSON.parse(data);
     var text = data.text;
@@ -1027,8 +998,8 @@ app.post('/lm', (req, res) => {
                     result: "error"
                 });//end of res send
             }else {
-                let buff = new Buffer(data);
-                let base64data = buff.toString('base64');
+                var buff = new Buffer(data);
+                var base64data = buff.toString('base64');
 
                 //send response
                 res.send({
@@ -1043,13 +1014,13 @@ app.post('/lm', (req, res) => {
 
     }else{
 
-        let tmpname = Math.random().toString(20).substr(2, 6);
-        let tmp_textpath = path2buildDir + 'work/' + tmpname + '.txt';
-        let tmp_scorerpath = path2buildDir + 'work/' + tmpname + '.scorer';
+        var tmpname = Math.random().toString(20).substr(2, 6);
+        var tmp_textpath = path2buildDir + 'work/' + tmpname + '.txt';
+        var tmp_scorerpath = path2buildDir + 'work/' + tmpname + '.scorer';
         write2File(tmp_textpath, text + "\n");
 
         // run script that builds model, callback after that is done and we moved scorer
-        const child = execFile(path2buildDir + "ttd-lm.sh", [tmpname], (error, stdout, stderr) => {
+        const child = execFile(path2buildDir + "ttd-lm.sh", [tmpname], function(error, stdout, stderr){
             if (error) {
                 console.error('stderr', stderr);
                 throw error;
@@ -1066,8 +1037,8 @@ app.post('/lm', (req, res) => {
                         result: "error"
                     });//end of res send
                 }else {
-                    let buff = new Buffer(data);
-                    let base64data = buff.toString('base64');
+                    var buff = new Buffer(data);
+                    var base64data = buff.toString('base64');
 
                     //send response
                     res.send({
@@ -1114,7 +1085,7 @@ var options = {
 //for http comment out all cert optons (or leave them?) and server line
 var server = http.createServer(options, app);
 
-server.listen(port, () =>
-	console.log(`App is listening on port ${port}.`));
+server.listen(port, function(){
+	console.log(`App is listening on port ${port}.`)});
     
 
