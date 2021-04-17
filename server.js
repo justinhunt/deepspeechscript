@@ -602,210 +602,7 @@ app.post('/spellcheck',function(req,res){
     }
 });
 
-/*************************************************
- NOT USED - needs to be integrated with childprocesses
- Main method for /convertMedia to mp3 ot mp4 with ffmpeg
- which returns after upload and saves result async
- Called from SQS->lambda->here UNTESTED
- **************************************************/
 
-function downloadmedia(downloadurl, savepath, callback){
-    request.head(downloadurl, function(err, res, body) {
-        if (err) {
-            console.error('stderr', stderr);
-            throw err;
-        }else {
-            request(downloadurl)
-                .pipe(fs.createWriteStream(savepath))
-                .on('close', callback)
-        }
-    });
-}
-app.post('/convertMediaReturn', function(req, res){
-    try {
-        if (!req.body.sourceUrl) {
-
-            res.send({
-                status: false,
-                message: 'convertMediaReturn: No file URL received'
-            });
-
-        } else {
-            console.log("*** start convert ***");
-
-            var destinationUrl = decodeURIComponent(req.body.destinationUrl);
-            var sourceUrl = decodeURIComponent(req.body.sourceUrl);
-            var mediaType = req.body.mediaType;
-            var format ="mp3";
-            var tmpfilename = Math.random().toString(20).substr(2, 6);
-            if(mediaType=='audio') {
-                tmpfilename += '.mp3';
-                format ="mp3";
-            }else{
-                tmpfilename += '.mp4';
-                format ="mp4";
-            }
-            var convfilename ='conv_' + tmpfilename;
-            var ffmpegfolder ='/home/deepserver/ffmpegwork/';
-            console.log("destinationUrl ", destinationUrl );
-            console.log("sourceUrl ", sourceUrl );
-            console.log("mediaType", mediaType);
-
-            //alternative download way
-            //or request(audioFileUrl).pipe(fs.createWriteStream('./uploads/' + audioFilename));
-
-            //download then convert then delete.
-            //NB return is not waiting for processing to finish.
-            downloadmedia(sourceUrl,ffmpegfolder + tmpfilename,function () {
-                var proc = ffmpeg(ffmpegfolder + tmpfilename)
-                    .format(format)
-                    // setup event handlers
-                    .on('end', function() {
-                        console.log('file has been converted succesfully');
-
-                        var streaming = false;
-                        if(!streaming) {
-                            //READ Whole file and upload. yuk
-                            var putDestinationOpts = {
-                                url: destinationUrl,
-                                method: 'PUT',
-                                body: fs.readFileSync(ffmpegfolder + convfilename),
-                                json: false,
-                                headers: {'Content-Type': 'application/octet-stream'}
-                            };
-                            request.put(putDestinationOpts, function (err, res, body) {
-                                if (err) {
-                                    console.log('error posting conv data', err);
-                                }else{
-                                    console.log('upload response', body);
-                                }
-                            });
-                        }else {
-                            //STREAMING upload. I think AWS S3 does not support chunked uploads
-                            //The code below is *perfect*. But it just wont work.
-                            var putDestinationOpts = {
-                                method: 'PUT',
-                                headers: {'Content-Type': 'application/octet-stream'}
-                            };
-                            var urlbits = url.parse(destinationUrl);
-                            putDestinationOpts.hostname = urlbits.hostname;
-                            putDestinationOpts.path = urlbits.path;
-                            //console.log(putDestinationOpts);
-                            var s3req = https.request(putDestinationOpts, (res) => {
-                                console.log('statusCode:', res.statusCode);
-                                console.log('headers:', res.headers);
-
-                                deleteFile(ffmpegfolder + convfilename);
-                                deleteFile(ffmpegfolder + tmpfilename);
-                            });
-                            var readStream = fs.createReadStream(ffmpegfolder + convfilename);
-                            readStream.pipe(s3req);
-                        }
-
-                    })
-                    .on('error', function(err) {
-                        console.log('an error happened: ' + err.message);
-                    })
-                    // save to file
-                    .save(ffmpegfolder + convfilename);
-
-             });
-
-            //send response, maybe with some id?
-            res.send({
-                status: true,
-                message: 'convertMediaReturn : File conversion job started.',
-                data: {
-                    results: "nothing to declare"
-                }
-            });
-
-        }//end of if sourceurl
-
-    } catch (err) {
-        console.log("ERROR");
-        console.log(err);
-        res.status(500).send();
-    }
-});
-
-
-/*************************************************
- Main method for /stt.php .. TTD style
- returns transcription expects base 64 string scorer as param
- concurrent use is safe
- Called from TTD server/browser
- **************************************************/
-app.post('/stt', function(req, res){
-
-    console.log("/stt endpoint triggered");
-
-    try {
-
-        if (!req.files) {
-            return res.send({
-                status: false,
-                message: 'No file uploaded'
-            });
-        }
-
-        if (!req.scorer) {
-            return res.send({
-                status: false,
-                message: 'No scorer uploaded'
-            });
-        }
-
-        var tmpname = Math.random().toString(20).substr(2, 6);
-        var b64scorer = req.scorer;
-        var buf = Buffer.from(b64scorer, 'base64');
-        fs.writeFileSync("uploads/" + tmpname + "_scorer", buf);
-        fs.writeFileSync("uploads/" + tmpname + "_blob", req.files.blob.data);
-
-        var proc = ffmpeg("uploads/" + tmpname + "_blob")
-            .format('wav')
-            .audioCodec('pcm_s16le')
-            .audioBitrate(16)
-            .audioChannels(1)
-            .withAudioFrequency(STD_SAMPLE_RATE)
-            // setup event handlers
-            .on('end', function() {
-
-                console.log('file has been converted succesfully');
-                //DO SOMETHING HERE
-
-                var model = createModel(STD_MODEL, "uploads/" + tmpname + "_scorer");
-                var audioBuffer = fs.readFileSync("uploads/converted_" + tmpname + "_blob");
-                var result = model.sttWithMetadata(audioBuffer);
-
-                console.log("Transcript: "+metadataToString(result));
-
-                res.send({
-                    status: true,
-                    message: 'File transcribed.',
-                    transcript: metadataToString(result),
-                    result: 'success'
-                });
-
-                deleteFile("uploads/" + tmpname + "_scorer");
-                deleteFile("uploads/" + tmpname + "_blob");
-                deleteFile("uploads/converted_" + tmpname + "_blob");
-
-            })
-            .on('error', function(err) {
-                console.log('an error happened: ' + err.message);
-            })
-            // save to file
-            .save("uploads/converted_" + tmpname + "_blob");
-
-
-    } catch (err) {
-
-        console.log(err);
-
-    }
-
-});
 
 /*************************************************
  Lang tool proxy
@@ -836,6 +633,7 @@ app.post('/lt',function(req,res){
 });
 
 /*************************************************
+ * NOT USED ANYMORE
  Main method for /lm.php
  returns scorer for set of words and saves the scorer and text
  concurrent use is safe
@@ -927,6 +725,85 @@ app.post('/lm', function(req, res){
     }//end of if pathtoscorer  exists
 
 });//end of app.get
+
+/*************************************************
+ * NOT USED ANYMORE
+ Main method for /stt.php .. TTD style
+ returns transcription expects base 64 string scorer as param
+ concurrent use is safe
+ Called from TTD server/browser
+ **************************************************/
+app.post('/stt', function(req, res){
+
+    console.log("/stt endpoint triggered");
+
+    try {
+
+        if (!req.files) {
+            return res.send({
+                status: false,
+                message: 'No file uploaded'
+            });
+        }
+
+        if (!req.body.scorer) {
+            return res.send({
+                status: false,
+                message: 'No scorer uploaded'
+            });
+        }
+
+        var tmpname = Math.random().toString(20).substr(2, 6);
+        var b64scorer = req.body.scorer;
+        var buf = Buffer.from(b64scorer, 'base64');
+        fs.writeFileSync("uploads/" + tmpname + "_scorer", buf);
+        fs.writeFileSync("uploads/" + tmpname + "_blob", req.files.blob.data);
+
+        var proc = ffmpeg("uploads/" + tmpname + "_blob")
+            .format('wav')
+            .audioCodec('pcm_s16le')
+            .audioBitrate(16)
+            .audioChannels(1)
+            .withAudioFrequency(STD_SAMPLE_RATE)
+            // setup event handlers
+            .on('end', function() {
+
+                console.log('file has been converted succesfully');
+                //DO SOMETHING HERE
+
+                var model = createModel(STD_MODEL, "uploads/" + tmpname + "_scorer");
+                var audioBuffer = fs.readFileSync("uploads/converted_" + tmpname + "_blob");
+                var result = model.sttWithMetadata(audioBuffer);
+
+                console.log("Transcript: "+metadataToString(result));
+
+                res.send({
+                    status: true,
+                    message: 'File transcribed.',
+                    transcript: metadataToString(result),
+                    result: 'success'
+                });
+
+                deleteFile("uploads/" + tmpname + "_scorer");
+                deleteFile("uploads/" + tmpname + "_blob");
+                deleteFile("uploads/converted_" + tmpname + "_blob");
+
+            })
+            .on('error', function(err) {
+                console.log('an error happened: ' + err.message);
+            })
+            // save to file
+            .save("uploads/converted_" + tmpname + "_blob");
+
+
+    } catch (err) {
+
+        console.log(err);
+
+    }
+
+});
+
 
 
 
