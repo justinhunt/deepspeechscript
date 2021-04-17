@@ -27,7 +27,7 @@ const gspeechclient = new gspeech.SpeechClient();
 Fork Queue
  **************************************************/
 const fqueue = new ForkQueue({
-    processFilePath: `${__dirname}/processtranscribe.js`,
+    processFilePath: `${__dirname}/childprocesses.js`,
     maxPoolSize: 2,
     minPoolSize: 2,
     idleTimeoutMillis: 30000
@@ -354,9 +354,7 @@ app.post('/transcribe', async function(req, res){
 
 /*************************************************
     Main method for /s3transcribeReturn
-    This version should not block main thread
-    Could be made to return resp. to lambda before finish job, if we wanted that.
- Called from SQS->lambda->here
+    Transcribes and posts message back to caller(sqs->lambda) and saves transcription on s3
  **************************************************/
 app.post('/s3transcribeReturn', function(req, res){
 	try {
@@ -465,9 +463,9 @@ app.post('/s3transcribeReturn', function(req, res){
 
 
 /*************************************************
+    NOT USED CURRENTLY
     Main method for /s3transcribe
- synchroneous transcription, ie it blocks thread till returns
- Called from SQS->lambda->here
+    Called from SQS->lambda->here
  **************************************************/
 app.post('/s3transcribe', async function(req, res){
         try {
@@ -519,52 +517,58 @@ app.post('/s3transcribe', async function(req, res){
                                var tmpname = Math.random().toString(20).substr(2, 6) + '.wav';
                                fs.writeFileSync("uploads/" + tmpname, audioData);
 
+                               var ct_callback= function(metadata) {
+
+                                   // to see metadata uncomment next line
+                                   // console.log(JSON.stringify(metadata, " ", 2));
+
+                                   var transcription = metadataToString(metadata);
+                                   var stringmetadata = metadataToAWSFormat(metadata, transcription);
+                                   //old string metadata
+                                   //var stringmetadata = JSON.stringify(metadata);
+
+                                   console.log("Transcription: " + transcription);
+                                   //console.log("Transcription META: " + stringmetadata);
+
+                                   var putTranscriptOpts = {
+                                       url: transcriptUrl,
+                                       method: 'PUT',
+                                       body: transcription,
+                                       json: false,
+                                       headers: {'Content-Type': 'application/octet-stream'}
+                                   };
+                                   request.put(putTranscriptOpts, function (err, res, body) {
+                                       if (err) {
+                                           console.log('error posting transcript', err);
+                                       }
+                                   });
+
+                                   var putMetadataOpts = {
+                                       url: metadataUrl,
+                                       method: 'PUT',
+                                       body: stringmetadata,
+                                       json: false,
+                                       headers: {'Content-Type': 'application/octet-stream'}
+                                   };
+                                   request.put(putMetadataOpts, function (err, res, body) {
+                                       if (err) {
+                                           console.log('error posting metadata transcript', err);
+                                       }
+                                   });
+
+
+                                   //send response
+                                   res.send({
+                                       status: true,
+                                       message: 'File uploaded and transcribed.',
+                                       data: {
+                                           results: transcription
+                                       }
+                                   });
+                               };
+
                                 var metadata = await convertAndTranscribePromise("uploads/" + tmpname, usescorer);
-
-                               // to see metadata uncomment next line
-                               // console.log(JSON.stringify(metadata, " ", 2));
-
-                               var transcription = metadataToString(metadata);
-                               var stringmetadata = metadataToAWSFormat(metadata,transcription);
-                               //old string metadata
-                               //var stringmetadata = JSON.stringify(metadata);
-
-                               console.log("Transcription: " + transcription);
-                               //console.log("Transcription META: " + stringmetadata);
-
-                               var putTranscriptOpts={ url: transcriptUrl,
-                                   method: 'PUT',
-                                   body: transcription,
-                                   json: false,
-                                   headers: {'Content-Type': 'application/octet-stream'}
-                               };
-                               request.put(putTranscriptOpts,function(err,res,body){
-                                   if(err){
-                                       console.log('error posting transcript',err);
-                                   }
-                               });
-
-                               var putMetadataOpts={ url: metadataUrl,
-                                   method: 'PUT',
-                                   body: stringmetadata,
-                                   json: false,
-                                   headers: {'Content-Type': 'application/octet-stream'}
-                               };
-                               request.put(putMetadataOpts,function(err,res,body){
-                                   if(err){
-                                       console.log('error posting metadata transcript',err);
-                                   }
-                               });
-
-
-                               //send response
-                               res.send({
-                                   status: true,
-                                   message: 'File uploaded and transcribed.',
-                                   data: {
-                                       results: transcription
-                                   }
-                               });
+                                ct_callback(metadata);
 
                            }else{
                               console.log("error", error);
