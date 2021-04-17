@@ -34,22 +34,22 @@ function convertAndTranscribe(audiofile, scorerfile){
 
             console.log('file has been converted succesfully');
 
-        var model = createModel(STD_MODEL, scorerfile);
-        var beamwidth=500;
-        if(scorerfile===STD_SCORER){
-            beamwidth=2000;
-        }
-        model.setBeamWidth(beamwidth);
-        var audioBuffer = fs.readFileSync(convfile);
-        var result = model.sttWithMetadata(audioBuffer);
+            var model = createModel(STD_MODEL, scorerfile);
+            var beamwidth=500;
+            if(scorerfile===STD_SCORER){
+                beamwidth=2000;
+            }
+            model.setBeamWidth(beamwidth);
+            var audioBuffer = fs.readFileSync(convfile);
+            var result = model.sttWithMetadata(audioBuffer);
 
-        console.log("Transcript: "+metadataToString(result));
+            console.log("Transcript: "+metadataToString(result));
 
-        deleteFile(audiofile);
-        deleteFile(convfile);
+            deleteFile(audiofile);
+            deleteFile(convfile);
 
-        resolve(result);
-    });
+            resolve(result);
+       });
     });
 
     //if we have an error

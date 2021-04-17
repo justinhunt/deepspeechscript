@@ -231,19 +231,6 @@ function convertAndTranscribe(audiofile, scorerfile, callback){
     }, callback);
 }
 
-function convertAndTranscribePromise(audiofile, scorerfile){
-    return new Promise(function(resolve, reject)
-    {
-        fqueue.push({
-            action: "convertAndTranscribe",
-            audiofile: audiofile,
-            scorerfile: scorerfile
-        }, function(metadata){resolve(metadata);});
-    });
-}
-
-
-
 /*************************************************
     Config of webserver 
     index.ejs from views is used for /
@@ -461,130 +448,6 @@ app.post('/s3transcribeReturn', function(req, res){
     }
 });
 
-
-/*************************************************
-    NOT USED CURRENTLY
-    Main method for /s3transcribe
-    Called from SQS->lambda->here
- **************************************************/
-app.post('/s3transcribe', async function(req, res){
-        try {
-                if (!req.body.audioFileUrl) {
-               
-                        res.send({
-                                status: false,
-                                message: 'S3: No file uploaded'
-                        });
-               
-                } else {
-                        console.log("*** start transcribe ***");
-
-                        //Use the name of the input field (i.e. "audioFile") to retrieve the uploaded file
-                        // you may have to change it
-                        var transcriptUrl = decodeURIComponent(req.body.transcriptUrl);
-                        var metadataUrl = decodeURIComponent(req.body.metadataUrl);
-                        var audioFileUrl = req.body.audioFileUrl;
-                        var audioFileType = req.body.audioFileType;
-                        var vocab = req.body.vocab;
-                        console.log("transcriptUrl", transcriptUrl);
-                        console.log("metadataUrl", metadataUrl);
-                        console.log("audioFileUrl", audioFileUrl);
-                        console.log("audioFileType", audioFileType);
-                        console.log("vocab", vocab);
-            
-                        //Use the mv() method to save the file in upload directory (i.e. "uploads")
-                       // request(audioFileUrl).pipe(fs.createWriteStream('./uploads/' + audioFilename));
-
-                        var requestOpts = {method: 'GET', url: audioFileUrl, encoding: null};
-                        request.get(requestOpts, async function (error, response, body) {
-                           if (!error && response.statusCode === 200) {
-                              var audioData = body;
-                              const audioLength = (audioData.length / 2) * (1 / STD_SAMPLE_RATE);
-                              console.log('- audio length', audioLength);
-
-                              // model creation at this point to be able to switch scorer here
-                              // we will load diff lang models (Eng. vocab sets) depending on the vocab param
-                              var usescorer = STD_SCORER;
-                              if(vocab && vocab!=='none'){
-                                 usescorer = SCORERS_FOLDER + 'id-' + vocab + '.scorer';
-                                 if (!fs.existsSync(usescorer)) {
-                                   usescorer = STD_SCORER;
-                                 }
-                              }
-                              console.log('using scorer:', usescorer);
-
-                               //Write audio file to disk
-                               var tmpname = Math.random().toString(20).substr(2, 6) + '.wav';
-                               fs.writeFileSync("uploads/" + tmpname, audioData);
-
-                               var ct_callback= function(metadata) {
-
-                                   // to see metadata uncomment next line
-                                   // console.log(JSON.stringify(metadata, " ", 2));
-
-                                   var transcription = metadataToString(metadata);
-                                   var stringmetadata = metadataToAWSFormat(metadata, transcription);
-                                   //old string metadata
-                                   //var stringmetadata = JSON.stringify(metadata);
-
-                                   console.log("Transcription: " + transcription);
-                                   //console.log("Transcription META: " + stringmetadata);
-
-                                   var putTranscriptOpts = {
-                                       url: transcriptUrl,
-                                       method: 'PUT',
-                                       body: transcription,
-                                       json: false,
-                                       headers: {'Content-Type': 'application/octet-stream'}
-                                   };
-                                   request.put(putTranscriptOpts, function (err, res, body) {
-                                       if (err) {
-                                           console.log('error posting transcript', err);
-                                       }
-                                   });
-
-                                   var putMetadataOpts = {
-                                       url: metadataUrl,
-                                       method: 'PUT',
-                                       body: stringmetadata,
-                                       json: false,
-                                       headers: {'Content-Type': 'application/octet-stream'}
-                                   };
-                                   request.put(putMetadataOpts, function (err, res, body) {
-                                       if (err) {
-                                           console.log('error posting metadata transcript', err);
-                                       }
-                                   });
-
-
-                                   //send response
-                                   res.send({
-                                       status: true,
-                                       message: 'File uploaded and transcribed.',
-                                       data: {
-                                           results: transcription
-                                       }
-                                   });
-                               };
-
-                                var metadata = await convertAndTranscribePromise("uploads/" + tmpname, usescorer);
-                                ct_callback(metadata);
-
-                           }else{
-                              console.log("error", error);
-                              console.log('response',response);
-
-                           } //end of if error
-                        }); ////end of request get
-
-                } //End of if rew.body
-        } catch (err) {
-                console.log("ERROR");
-                console.log(err);
-                res.status(500).send();
-        }
-});
-
 /*************************************************
  Trigger building a new language model with KenLM
  Should be safe for concurrent use (now)
@@ -740,6 +603,7 @@ app.post('/spellcheck',function(req,res){
 });
 
 /*************************************************
+ NOT USED - needs to be integrated with childprocesses
  Main method for /convertMedia to mp3 ot mp4 with ffmpeg
  which returns after upload and saves result async
  Called from SQS->lambda->here UNTESTED
@@ -867,7 +731,7 @@ app.post('/convertMediaReturn', function(req, res){
 
 
 /*************************************************
- Main method for /stt.php
+ Main method for /stt.php .. TTD style
  returns transcription expects base 64 string scorer as param
  concurrent use is safe
  Called from TTD server/browser
@@ -893,7 +757,7 @@ app.post('/stt', function(req, res){
         }
 
         var tmpname = Math.random().toString(20).substr(2, 6);
-        var b64scorer = req.body.scorer;
+        var b64scorer = req.scorer;
         var buf = Buffer.from(b64scorer, 'base64');
         fs.writeFileSync("uploads/" + tmpname + "_scorer", buf);
         fs.writeFileSync("uploads/" + tmpname + "_blob", req.files.blob.data);
