@@ -232,14 +232,14 @@ function convertAndTranscribe(audiofile, scorerfile, callback){
 }
 
 function convertAndTranscribePromise(audiofile, scorerfile){
-    return new Promise(resolve, reject)
+    return new Promise(function(resolve, reject)
     {
         fqueue.push({
             action: "convertAndTranscribe",
             audiofile: audiofile,
             scorerfile: scorerfile
         }, function(metadata){resolve(metadata);});
-    }
+    });
 }
 
 
