@@ -749,7 +749,7 @@ app.post('/stt', function(req, res){
             });
         }
 
-        if (!req.body.scorer) {
+        if (!req.scorer) {
             return res.send({
                 status: false,
                 message: 'No scorer uploaded'
