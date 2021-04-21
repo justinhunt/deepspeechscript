@@ -53,12 +53,15 @@ function convertAndTranscribe(audiofile, scorerfile){
 
             resolve(result);
        });
+
+        //if we have an error
+        proc.on('error', function(err) {
+            console.log('an error happened: ' + err.message);
+            reject(err);
+        });
+
     });
 
-    //if we have an error
-    proc.on('error', function(err) {
-        console.log('an error happened: ' + err.message);
-    });
 
     // save to file
     proc.save(convfile);

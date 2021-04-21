@@ -449,6 +449,7 @@ app.post('/s3transcribeReturn', function(req, res){
                     }else{
                         console.log("error", error);
                         console.log('response',response);
+                        res.status(500).send();
 
                     } //end of if error\
                 })//end of if req get
