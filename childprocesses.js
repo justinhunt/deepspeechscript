@@ -10,9 +10,12 @@ process.on('message', async function(message){
   switch(message.value.action){
 
       case 'convertAndTranscribe':
-          var metadata = await convertAndTranscribe(message.value.audiofile,message.value.scorerfile);
-          process.send(metadata);
-
+          try {
+              var metadata = await convertAndTranscribe(message.value.audiofile, message.value.scorerfile);
+              process.send(metadata);
+          }catch(error){
+              process.send({error: error});
+          }
   }
 });
 

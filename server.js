@@ -315,7 +315,11 @@ app.post('/transcribe', async function(req, res){
 				 console.log('-usescorer: ', usescorer);
 
 				var ct_callback = function (metadata) {
-                    var transcription = metadataToString(metadata);
+				    if(metadata.hasOwnProperty('error')){
+                        var transcription = metadata.error;
+                    }else {
+                        var transcription = metadataToString(metadata);
+                    }
                     console.log("Transcription: " + transcription);
 
                     //send response
@@ -391,6 +395,15 @@ app.post('/s3transcribeReturn', function(req, res){
 
 
                         var ct_callback = function (metadata) {
+
+                            //if we errored out , so be it
+                            if(metadata.hasOwnProperty('error')){
+                                console.log("ERROR");
+                                console.log(metadata.error);
+                                res.status(500).send();
+                                return;
+                            }
+
                             var transcription = metadataToString(metadata);
                             var stringmetadata = metadataToAWSFormat(metadata, transcription);
 
