@@ -463,6 +463,29 @@ app.post('/s3transcribeReturn', function(req, res){
 });
 
 /*************************************************
+ Queue Status
+ Called from Postman
+
+ **************************************************/
+app.post('/queueStatus',function(req,res){
+    try {
+        var message = 'waiting: ' + fqueue.length() + ' running: ' + fqueue.running();
+
+        //send response
+        res.send({
+            status: true,
+            message: message,
+            data: message
+        });
+
+    } catch (err) {
+        console.log("ERROR");
+        console.log(err);
+        res.status(500).send();
+    }
+});
+
+/*************************************************
  Trigger building a new language model with KenLM
  Should be safe for concurrent use (now)
  Called from SQS->lambda->here
