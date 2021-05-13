@@ -599,6 +599,8 @@ app.get('/scorerbuilder', function(req, res){
                         moveFile(tmp_textpath, pathtotext);
                     }else{
                         console.log('no path to scorer:', ' because it was lang:' + lang);
+                        deleteFile(tmp_scorerpath);
+                        deleteFile(tmp_textpath);
                     }
                 }
             });
