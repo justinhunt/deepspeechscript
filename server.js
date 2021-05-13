@@ -525,6 +525,14 @@ function write2File (path, content) {
 
 app.get('/scorerbuilder', function(req, res){
     var sentence = req.query.sentence;
+
+    //get a lang param
+    if(req.query.lang!=null && req.query.lang!=undefined && req.query.lang != "" && lang.substr(0,2)!='en') {
+        var lang = req.query.lang;
+    }else{
+        var lang = 'en';
+    }
+    console.log("** Build Scorer for lang:" + lang);
     console.log("** Build Scorer for " + sentence);
 
     
@@ -554,7 +562,7 @@ app.get('/scorerbuilder', function(req, res){
         write2File(tmp_textpath, sentence + "\n");
 
         // run script that builds model, callback after that is done and we moved scorer
-        const child = execFile(path2buildDir + "ttd-lm.sh", [tmpname], function(error, stdout, stderr){
+        const child = execFile(path2buildDir + "ttd-lm.sh", [tmpname,lang], function(error, stdout, stderr){
             if (error) {
                 console.error('stderr', stderr);
                 throw error;
@@ -577,14 +585,21 @@ app.get('/scorerbuilder', function(req, res){
                         status: true,
                         message: 'Scorer generated with given id below',
                         data: {
-                            scorerID: uid
+                            scorerID: uid,
+                            scorerData: data
+
                         }
                     });//end of res send
 
                     // script is done, scorer is built, move scorer and txt must work across devices (ala efs)
-                    console.log('path to scorer:', pathtoscorer);
-                    moveFile(tmp_scorerpath, pathtoscorer);
-                    moveFile(tmp_textpath, pathtotext);
+                    //we save en to scorer folder for historical reasons, but all else is returned to be saved in S3
+                    if(lang==='en') {
+                        console.log('path to scorer:', pathtoscorer);
+                        moveFile(tmp_scorerpath, pathtoscorer);
+                        moveFile(tmp_textpath, pathtotext);
+                    }else{
+                        console.log('no path to scorer:', ' because it was lang:' + lang);
+                    }
                 }
             });
 
