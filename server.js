@@ -595,8 +595,10 @@ app.get('/scorerbuilder', function(req, res){
                     //we save en to scorer folder for historical reasons, but all else is returned to be saved in S3
                     if(lang==='en') {
                         console.log('path to scorer:', pathtoscorer);
-                        moveFile(tmp_scorerpath, pathtoscorer);
-                        moveFile(tmp_textpath, pathtotext);
+                        //moveFile(tmp_scorerpath, pathtoscorer);
+                        //moveFile(tmp_textpath, pathtotext);
+                        deleteFile(tmp_scorerpath);
+                        deleteFile(tmp_textpath);
                     }else{
                         console.log('no path to scorer:', ' because it was lang:' + lang);
                         deleteFile(tmp_scorerpath);
