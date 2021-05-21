@@ -169,8 +169,8 @@ function convertAndGspeechTranscribe(audiofile, lang){
 				const audio = { content: audioBytes };
 				var samplerate = 44100;
 				const config = {
-					encoding: 'LINER16',
-					sampeRateHertz: samplerate,
+					encoding: 'LINEAR16',
+					sampleRateHertz: samplerate,
 					languageCode: lang,
 					enableAutomaticPunctuation: false,
 					enableWordTimeOffsets: false
