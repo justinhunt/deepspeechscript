@@ -543,6 +543,36 @@ app.get('/scorerbuilder', function(req, res){
     var pathtoscorer = SCORERS_FOLDER + uid + ".scorer";
     var pathtotext = SCORERS_FOLDER + uid + ".txt";
 
+    //final check that passage text has no chars not in alphabet.txt
+    //it is likely odd punctuation ..
+    switch(lang){
+
+        case 'de':
+            sentence = sentence.replace(/[^a-zäöü' ]/g, "");
+            break;
+
+        case 'fr':
+            sentence = sentence.replace(/[^a-zàâæçèéêëîïôœùûüÿ' ]/g, "");
+            break;
+
+        case 'es':
+            sentence = sentence.replace(/[^a-záéíóúýñü ]/g, "");
+            break;
+
+        case 'it':
+            sentence = sentence.replace(/[^a-z' ]/g, "");
+            break;
+
+        case 'pl':
+            sentence = sentence.replace(/[^a-zćńóśźżąęł ]/g, "");
+            break;
+
+        case 'en':
+        default:
+            sentence = sentence.replace(/[^a-z' ]/g, "");
+
+    }
+
     //If model exists, terrific
     if (fs.existsSync(pathtoscorer)) {
         console.log("** Scorer already existed **");
