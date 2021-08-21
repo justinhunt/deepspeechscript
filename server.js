@@ -704,7 +704,7 @@ app.post('/katakanify',function(req,res){
             var passage = req.body.passage;
 
             var returndata={};
-            const child = execFile("./katakanify.sh",[passage], function(error, stderr, stdout){
+            const child = execFile("./katakanify.sh",[passage], function(error, stdout, stderr){
                 if (error) {
                     console.log('error: ' + error.message);
                     returndata.status=true;
@@ -713,16 +713,6 @@ app.post('/katakanify',function(req,res){
                     res.send({
                         status: false,
                         message: 'Katakanify complete: error',
-                        data: returndata
-                    });
-                }else if (stderr) {
-                    console.log('stderr: ' + stderr);
-                    returndata.status=false;
-                    returndata.results =stderr;
-                    //send response
-                    res.send({
-                        status: false,
-                        message: 'Katakanify complete: stderr',
                         data: returndata
                     });
 
