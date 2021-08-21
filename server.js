@@ -704,32 +704,32 @@ app.post('/katakanify',function(req,res){
             var passage = req.body.passage;
 
             var returndata={};
-            const child = execFile("./katakanify.sh",[passage], function(error, stdout, stderr){
+            const child = execFile("./katakanify.sh",[passage], function(error, stderr, stdout){
                 if (error) {
                     console.log('error: ' + error.message);
                     returndata.status=true;
-                    returndata.results =stdout;
+                    returndata.results =error;
                     //send response
                     res.send({
                         status: false,
-                        message: 'Katakanify complete.',
+                        message: 'Katakanify complete: error',
                         data: returndata
                     });
                 }else if (stderr) {
                     console.log('stderr: ' + stderr);
                     returndata.status=false;
-                    returndata.results =stdout;
+                    returndata.results =stderr;
                     //send response
                     res.send({
-                        status: true,
-                        message: 'Katakanify complete.',
+                        status: false,
+                        message: 'Katakanify complete: stderr',
                         data: returndata
                     });
 
                 }else {
                     console.log('stdout: ' + stdout);
                     returndata.status=true;
-                    returndata.results =stdout;
+                    returndata.results =stdout.split("\n");
                     //send response
                     res.send({
                         status: true,
