@@ -689,6 +689,65 @@ app.post('/spellcheck',function(req,res){
 });
 
 
+app.post('/katakanify',function(req,res){
+    try {
+        if (!req.body.passage) {
+
+            res.send({
+                status: false,
+                message: 'katakanify: No passage included'
+            });
+
+        } else {
+            console.log("*** start katakanify ***");
+
+            var passage = req.body.passage;
+
+            var returndata={};
+            const child = execFile("./katakanify.sh",[passage], function(error, stdout, stderr){
+                if (error) {
+                    console.log('error: ' + error.message);
+                    returndata.status=true;
+                    returndata.results =stdout;
+                    //send response
+                    res.send({
+                        status: false,
+                        message: 'Katakanify complete.',
+                        data: returndata
+                    });
+                }else if (stderr) {
+                    console.log('stderr: ' + stderr);
+                    returndata.status=false;
+                    returndata.results =stdout;
+                    //send response
+                    res.send({
+                        status: true,
+                        message: 'Katakanify complete.',
+                        data: returndata
+                    });
+
+                }else {
+                    console.log('stdout: ' + stdout);
+                    returndata.status=true;
+                    returndata.results =stdout;
+                    //send response
+                    res.send({
+                        status: true,
+                        message: 'Katakanify complete.',
+                        data: returndata
+                    });
+                }
+
+             });
+        }
+    } catch (err) {
+        console.log("ERROR");
+        console.log(err);
+        res.status(500).send();
+    }
+});
+
+
 
 /*************************************************
  Lang tool proxy
