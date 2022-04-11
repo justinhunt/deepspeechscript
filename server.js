@@ -585,9 +585,11 @@ app.get('/scorerbuilder', function(req, res){
 		
 	case 'hu':
             sentence = sentence.replace(/[^a-záéíóöúüőű ]/g, "");
+			break;
 
 	case 'ro':
             sentence = sentence.replace(/[^a-zâîășț ]/g, "");			
+			break;
 
 	case 'uk':
             sentence = sentence.replace(/[^’абвгґдеєжзиіїйклмнопрстуфхцчшщьюя ]/g, "");
