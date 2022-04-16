@@ -523,7 +523,7 @@ function write2File (path, content) {
     });
 }
 
-app.get('/scorerbuilder', function(req, res){
+app.post('/scorerbuilder', function(req, res){
     var sentence = req.query.sentence;
 
     //get a lang param
