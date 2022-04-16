@@ -524,11 +524,11 @@ function write2File (path, content) {
 }
 
 app.post('/scorerbuilder', function(req, res){
-    var sentence = req.query.sentence;
+    var sentence = req.body.sentence;
 
     //get a lang param
-    if(req.query.lang!=null && req.query.lang!=undefined && req.query.lang != "" && req.query.lang.substr(0,2)!='en') {
-        var lang = req.query.lang;
+    if(req.body.lang!=null && req.body.lang!=undefined && req.body.lang != "" && req.body.lang.substr(0,2)!='en') {
+        var lang = req.body.lang;
     }else{
         var lang = 'en';
     }
